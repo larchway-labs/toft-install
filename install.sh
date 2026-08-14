@@ -297,7 +297,7 @@ gen_hex() {
 
 # --- Phase 1: the checks -----------------------------------------------------
 
-OS_ID= OS_NAME= OS_LIKE= ARCH= INIT=none IS_CLOUD=0
+OS_ID= OS_NAME= OS_LIKE= ARCH= INIT=none IS_CLOUD=0 IS_WSL=0
 
 # One field out of /etc/os-release, read in a subshell so nothing it defines
 # escapes into this script's variables.
@@ -336,8 +336,17 @@ preflight() {
     ok "$OS_NAME $M_ARROW $ARCH $M_ARROW $INIT"
 
     if grep -qi microsoft /proc/version 2>/dev/null; then
-        note 'WSL detected — the Docker daemon is started by Docker Desktop, not by this script'
-        INIT=none
+        IS_WSL=1
+        # Recent WSL runs systemd when /etc/wsl.conf asks it to, and then the
+        # daemon is managed from in here like anywhere else. Assuming it never
+        # is throws that away and leaves the daemon un-enabled on a machine
+        # that could have started it.
+        if [ "$INIT" = systemd ]; then
+            note 'WSL detected, with systemd running — the daemon is managed from here'
+        else
+            note 'WSL detected — the Docker daemon is started by Docker Desktop, not by this script'
+            INIT=none
+        fi
     fi
 
     priv_init
@@ -392,7 +401,14 @@ check_docker() {
         fi
     else
         COMPOSE_OK=0
-        note 'Docker is not installed'
+        # "not installed" and "installed but dead" need different fixes, and the
+        # warn above has already said which this is. Repeating it as "Docker is
+        # not installed" contradicts it in the same block of output.
+        if have docker; then
+            note 'the docker CLI is here, but nothing is answering on the socket'
+        else
+            note 'Docker is not installed'
+        fi
     fi
 }
 
@@ -539,6 +555,20 @@ resolve_home() {
 
 ensure_docker() {
     if [ "$DOCKER_PRESENT" = 1 ] && [ "$COMPOSE_OK" = 1 ]; then return 0; fi
+
+    # WSL with a docker CLI already on PATH is Docker Desktop, with either its
+    # daemon stopped on the Windows side or this distribution left out of its
+    # integration list. Neither is fixable from in here, and installing Docker
+    # Engine over the top makes it worse: the machine ends up with two dockers,
+    # the second one started by an init system WSL is not running, and the
+    # symptom is this same message with a longer path to the cause.
+    if [ "$IS_WSL" = 1 ] && [ "$DOCKER_PRESENT" = 0 ] && have docker; then
+        die "the docker CLI is here but no daemon is answering it, and on WSL this script cannot start one.
+  Start Docker Desktop on Windows, then Settings $M_ARROW Resources $M_ARROW WSL integration
+  and turn this distribution on. 'docker info' working in this shell is the test.
+  Then run this again."
+    fi
+
     [ "$SKIP_DOCKER_INSTALL" = 0 ] ||
         die "Docker with the Compose v2 plugin is required, and --no-docker-install was given."
 
@@ -613,7 +643,12 @@ docker_install_plan() {
 }
 
 install_docker_convenience() {
-    _s=$HOME_DIR/.get-docker.sh
+    # A temp file, not $HOME_DIR: Docker is installed in phase 2 and $HOME_DIR
+    # is not created until phase 3, so writing there fails with `curl: (23)
+    # Failure writing output to destination` — a message that names neither the
+    # directory nor the reason. Nothing keeps this file anyway; it is removed
+    # three lines down.
+    _s=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/launchpad-get-docker.$$.sh")
     spin 'downloading get.docker.com' fetch https://get.docker.com "$_s" ||
         die "could not download Docker's install script"
     spin 'installing Docker Engine' run_priv sh "$_s" ||
@@ -672,7 +707,16 @@ enable_daemon() {
         spin 'starting the Docker daemon' run_priv rc-service docker start ||
             warn 'could not start the Docker daemon'
         ;;
-    *) note 'no init system to enable the daemon with — start Docker yourself' ;;
+    *)
+        # WSL without systemd still has the sysvinit script the Debian package
+        # ships, and `service docker start` is the documented way to run it.
+        if [ "$IS_WSL" = 1 ] && have service; then
+            spin 'starting the Docker daemon (service)' run_priv service docker start ||
+                warn 'could not start the Docker daemon — try: sudo service docker start'
+        else
+            note 'no init system to enable the daemon with — start Docker yourself'
+        fi
+        ;;
     esac
 }
 
