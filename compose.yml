@@ -1,0 +1,137 @@
+# Launchpad — the one-box install.
+#
+# Two services. Everything optional stays absent, which is the product's rule
+# rather than this file's economy: no artifact store, no isolated backend, no
+# app storage, no telemetry, no jobs. Their routes 404 and nothing about them
+# appears in the UI, which is the honest state for an install that has not been
+# given the infrastructure they need.
+#
+# Deployed apps run *inside* the launchpad container as OS processes supervised
+# by PM2, each as its own auto-created account (the image defaults to
+# APP_USER_PER_APP=1 + APP_USER_AUTOCREATE=1). That is shared mode. Apps cannot
+# read the platform's files or each other's, and they still share loopback —
+# app-to-app isolation is the accepted risk of this mode, not something this
+# file quietly fixes.
+#
+# Nothing here mounts the Docker socket. The platform supervises processes, not
+# containers, so no deployed app is ever handed a path to the host's daemon.
+#
+#   docker compose up -d          start
+#   docker compose logs -f        watch
+#   docker compose down           stop, keeping both volumes
+#   docker compose down -v        stop and DESTROY the database and all releases
+#
+# Values come from .env beside this file. install.sh writes it; it is the only
+# copy of the key that decrypts this install's app secrets, so back it up.
+
+# The project name namespaces containers, networks and volumes. Set here rather
+# than inherited from the directory name, so an install in ~/launchpad and one
+# in /opt/launchpad cannot silently share volumes — and so a developer running
+# this bundle never collides with the repo's own docker-compose.yml, which
+# claims the bare names `launchpad` and `launchpad-postgres`.
+name: launchpad
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: launchpad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is unset — .env is missing or incomplete}
+      POSTGRES_DB: launchpad
+      # Deterministic collation, so ORDER BY means the same thing on every
+      # install. Matches the development compose file.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Deliberately no `ports:`. The database holding every app's encrypted
+    # secrets and the audit log is reachable on the compose network and nowhere
+    # else — which also means 5432 cannot collide with a Postgres this machine
+    # already runs. `docker compose exec postgres psql -U launchpad` is the way in.
+    healthcheck:
+      # Launchpad's own startup blocks on migrations, so this only has to say
+      # when connections are being accepted.
+      test: ["CMD-SHELL", "pg_isready -U launchpad -d launchpad"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: &logging
+      # Build output is verbose and the default is unbounded. A small box that
+      # fills its disk with container logs presents as an unrelated build
+      # failure, days later.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  launchpad:
+    image: ${LAUNCHPAD_IMAGE:-launchpad}:${LAUNCHPAD_VERSION:?LAUNCHPAD_VERSION is unset — .env is missing or incomplete}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # postgres:5432 is the in-network address. There is no host port mapping
+      # to fall back on, by design.
+      DATABASE_URL: postgres://launchpad:${POSTGRES_PASSWORD:?}@postgres:5432/launchpad?sslmode=disable
+
+      # config.Load refuses to start without these two. JWT_SECRET must be at
+      # least 32 bytes; ENCRYPTION_KEY must be exactly 64 hex characters.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is unset — .env is missing or incomplete}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is unset — .env is missing or incomplete}
+
+      # Read exactly once, when the built-in administrator has no password yet.
+      # install.sh removes it from .env after the first successful boot, and an
+      # empty value here means the server generates one and prints it once.
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+
+      # Loopback, and the apps origin derived from it as http://localhost:8081.
+      # Both are reached through an SSH tunnel — see the README. `localhost` is
+      # a secure context in every current browser, so session cookies keep the
+      # Secure flag over plain http; a LAN address would not, and sign-in would
+      # fail silently.
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+
+      # Additional browser origins trusted for writes. Needed only when the SSH
+      # tunnel cannot use the same port numbers on both ends — see the README.
+      EXTRA_ORIGINS: ${EXTRA_ORIGINS:-}
+
+      # The platform's own outbound calls (the gallery catalog, an OIDC issuer,
+      # Slack, advisory feeds) honour these. Builds do NOT: git, npm, uv and go
+      # run with an allow-list environment that deliberately excludes them, so a
+      # proxy URL carrying credentials is never handed to a deployed app. An
+      # install behind a mandatory proxy therefore cannot build apps yet.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,postgres}
+    ports:
+      # Loopback only. Nothing is exposed to the network, so there is no
+      # firewall rule to get right — and Docker's published ports bypass ufw
+      # entirely, so a rule would not have been believed anyway.
+      #
+      # Two ports, not one: deployed apps answer on 8081 so they land on a
+      # different browser origin than the platform. Collapsing that is a real
+      # security trade, and this install does not make it.
+      #
+      # The container side is fixed; the host side moves, because a box that
+      # already runs something on 8080 is common and should not be a refusal.
+      # The tunnel is what makes that free: `ssh -L 8080:localhost:9080` puts the
+      # browser on localhost:8080 whatever the host port is, so BASE_URL — which
+      # is a statement about the *browser's* origin — does not change with it.
+      - "127.0.0.1:${HOST_PLATFORM_PORT:-8080}:8080"
+      - "127.0.0.1:${HOST_APPS_PORT:-8081}:8081"
+    volumes:
+      # Release checkouts, logs, and the shared npm/uv/Go build caches. A named
+      # volume rather than a bind mount: these are container-owned artifacts,
+      # and on a SELinux-enforcing host a bind mount needs :z relabelling that
+      # nothing here would remember to ask for.
+      - launchpad-data:/data
+    # The platform drains rather than closing. The 10-second default would kill
+    # a deploy mid-build and leave a half-written release behind.
+    stop_grace_period: 60s
+    logging: *logging
+
+volumes:
+  postgres-data:
+  launchpad-data:

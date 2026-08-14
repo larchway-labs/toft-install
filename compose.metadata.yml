@@ -1,0 +1,24 @@
+# Cloud metadata blocking — written into use by install.sh when it finds a
+# metadata endpoint answering at 169.254.169.254.
+#
+# On a cloud VM, 169.254.169.254 hands out the instance role's credentials to
+# anything that asks, and in shared mode "anything" includes every deployed app.
+# docker/entrypoint.sh installs an iptables OUTPUT rule keyed on the app
+# accounts' shared group, which leaves the platform's own AWS access intact.
+#
+# The two halves must travel together. BLOCK_AWS_METADATA=1 without CAP_NET_ADMIN
+# is not a degraded mode — the entrypoint refuses to start rather than run apps
+# that can read the node's credentials — which is exactly why they are in one
+# file rather than one in .env and one here.
+#
+# install.sh activates this by setting COMPOSE_FILE in .env, so a later plain
+# `docker compose up -d` in this directory keeps picking up both files. On a
+# bare-metal or on-premises box neither this file nor the capability is used:
+# absent, rather than configured-and-off.
+
+services:
+  launchpad:
+    cap_add:
+      - NET_ADMIN
+    environment:
+      BLOCK_AWS_METADATA: "1"
