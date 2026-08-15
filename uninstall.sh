@@ -6,9 +6,11 @@
 #
 # The default is reversible: `docker compose up -d` brings the same install back
 # with every app, secret and audit row intact. --purge is not reversible by
-# anything, which is why it asks you to type the word. It leaves behind only
-# what was never this install's: postgres:17-alpine, Docker itself, and any
-# backups/ you took.
+# anything, which is why it asks you to type the word. It takes the whole
+# install directory, dumps and backups in it included — they decrypt with the
+# ENCRYPTION_KEY that goes in the same breath. Move anything you want to keep
+# out of there first. What survives is what was never this install's: Docker,
+# and the postgres image.
 
 set -eu
 
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
         DIR=$1
         ;;
     --help | -h)
-        sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -41,11 +43,11 @@ done
 # copy people have to hand is as often the unpacked bundle or a checkout, whose
 # compose.yml is identical and whose .env is somewhere else entirely. Anchoring
 # on compose.yml alone finds that one and then removes nothing, so .env is what
-# marks an install, and the two directories install.sh chooses between are
-# searched before this gives up.
+# marks an install, and there is exactly one other place it can be: install.sh
+# writes to ~/.launchpad and nowhere else unless it was told to.
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ -z "$DIR" ]; then
-    for d in "$HERE" /opt/launchpad "${HOME:-.}/.launchpad"; do
+    for d in "$HERE" "${HOME:-.}/.launchpad"; do
         if [ -f "$d/.env" ] && [ -f "$d/compose.yml" ]; then
             DIR=$d
             break
@@ -59,7 +61,7 @@ if [ -z "$DIR" ]; then
 fi
 
 [ -f "$DIR/compose.yml" ] || {
-    echo "no compose.yml in $DIR — pass --dir (installs live in /opt/launchpad or ~/.launchpad)" >&2
+    echo "no compose.yml in $DIR — pass --dir (an install lives in ~/.launchpad unless install.sh was given one)" >&2
     exit 1
 }
 cd "$DIR"
@@ -90,8 +92,9 @@ fi
 printf '\n  This destroys, permanently and with no backup:\n\n'
 printf '    - the database: every app, user, secret, API key and audit row\n'
 printf '    - every built release on the data volume\n'
-printf '    - %s/.env, including the only copy of ENCRYPTION_KEY\n' "$DIR"
-printf '    - the Launchpad image, and this directory\n\n'
+printf '    - the Launchpad image\n'
+printf '    - %s and everything in it: .env and the only copy of\n' "$DIR"
+printf '      ENCRYPTION_KEY, and any dumps or backups you put there\n\n'
 
 if [ "$YES" != 1 ]; then
     # Openable, not merely present: /dev/tty exists in contexts where opening it
@@ -118,9 +121,6 @@ compose down -v
 # touched — it is a public base image this box may well be using elsewhere, and
 # it is not ours to delete.
 IMAGE=$(sed -n 's/^LAUNCHPAD_IMAGE=//p' "$DIR/.env" 2>/dev/null | tail -1)
-rm -f "$DIR/.env" "$DIR/compose.yml" "$DIR/compose.metadata.yml" \
-    "$DIR/.env.example" "$DIR/SHA256SUMS" "$DIR/install.log" \
-    "${TMPDIR:-/tmp}/launchpad-install.log"
 
 IMAGE_GONE=0
 if [ -n "$IMAGE" ] && docker images -q "$IMAGE" 2>/dev/null | grep -q .; then
@@ -136,24 +136,27 @@ if [ -n "$IMAGE" ] && docker images -q "$IMAGE" 2>/dev/null | grep -q .; then
     docker images -q "$IMAGE" 2>/dev/null | grep -q . || IMAGE_GONE=1
 fi
 
+# The directory and everything in it, this script included. Not file by file
+# with an rmdir at the end that declines on whatever is left: the operator asked
+# for the install to be gone, and a dump of the database they are about to
+# destroy is not a thing to preserve half of — it decrypts with an
+# ENCRYPTION_KEY that is going in the same breath. The confirmation above says
+# so in as many words, which is what earns this line.
+#
+# Deleting the running script is safe: the shell holds an open descriptor and
+# the inode outlives the name. Removing $DIR rather than $0 is deliberate — when
+# this was run from an unpacked bundle instead of from the install, $0 is the
+# wrong file and the install's own copy is the right one.
+case $DIR in
+/ | /usr | /etc | /home | /var | /opt)
+    echo "refusing to remove $DIR" >&2
+    exit 1
+    ;;
+esac
+cd /
+rm -rf "$DIR" "${TMPDIR:-/tmp}/launchpad-install.log"
+
 printf '\n  Removed: both containers, both volumes'
 [ "$IMAGE_GONE" = 1 ] && printf ', the %s image' "$IMAGE"
-printf ' and every file this install wrote.\n'
-printf '  Left alone: postgres:17-alpine, a public image this machine may use elsewhere.\n'
-
-# The script and the directory are the last of it. What goes is the copy in the
-# install directory, never `$0`: those are the same file only when this was run
-# from the install, and deleting the bundle or checkout somebody happened to
-# invoke instead would remove the wrong one and leave the right one. Deleting
-# the running script is safe on the path where they are the same file — the
-# shell holds an open descriptor and the inode outlives the name. rmdir then
-# refuses on a directory that still has anything in it, which is exactly the
-# right refusal: a backups/ holds dumps somebody took on purpose, and this is
-# not the moment to be clever about them.
-rm -f "$DIR/uninstall.sh"
-cd /
-if rmdir "$DIR" 2>/dev/null; then
-    printf '  %s is gone.\n\n' "$DIR"
-else
-    printf '  %s still holds files this install did not write, and was kept.\n\n' "$DIR"
-fi
+printf ' and %s.\n' "$DIR"
+printf '  Left alone: postgres:17-alpine, a public image this machine may use elsewhere.\n\n'

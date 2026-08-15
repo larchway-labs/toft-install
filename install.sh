@@ -54,8 +54,7 @@ Launchpad installer
 
   --yes                 do not prompt; assume yes (required when there is no terminal)
   --check               run the checks, change nothing, and report
-  --dir PATH            install into PATH (default ~/.launchpad, or /opt/launchpad
-                        when this install needs root anyway)
+  --dir PATH            install into PATH (default ~/.launchpad)
   --version X.Y.Z       the Launchpad version to install
   --image NAME          the image repository (default gopanair/launchpad)
   --no-docker-install   fail rather than installing Docker
@@ -596,30 +595,16 @@ check_existing() {
     fi
 }
 
-# Called after check_docker, which is what makes DOCKER_PRESENT and
-# DOCKER_NEEDS_PRIV answerable here.
+# One place, always, unless --dir said otherwise. A rule that picked between
+# /opt/launchpad and here — on privilege, or on which of them already had an
+# .env — meant the answer depended on how the operator happened to be logged in
+# when they ran it, and the same person running `sudo ./install.sh` on Tuesday
+# and `./install.sh` on Wednesday would be looking at two installs. Nothing this
+# script writes needs to be outside the operator's home, so nothing is, and the
+# uninstaller has one place to look.
 resolve_home() {
     [ -n "$HOME_DIR" ] && return 0
-    # An install already on this machine wins over any rule about where a new
-    # one would go: re-running is the upgrade path, and it has to find the .env
-    # it must not rewrite. uninstall.sh looks in the same two places for the
-    # same reason.
-    for _d in /opt/launchpad "${HOME:-.}/.launchpad"; do
-        [ -f "$_d/.env" ] && {
-            HOME_DIR=$_d
-            return 0
-        }
-    done
-    # /opt is the right home for a machine-wide service, but only where this is
-    # already a privileged install. Choosing it because a sudo *binary* exists
-    # asks for a password to run a mkdir and nothing else — on Docker Desktop
-    # under WSL, or against a rootless daemon, every other step of the install
-    # is unprivileged and that prompt is the only one there is.
-    if [ "$(id -u)" = 0 ] || [ "$DOCKER_NEEDS_PRIV" = 1 ] || [ "$DOCKER_PRESENT" = 0 ]; then
-        HOME_DIR=/opt/launchpad
-    else
-        HOME_DIR=${HOME:-.}/.launchpad
-    fi
+    HOME_DIR=${HOME:-.}/.launchpad
 }
 
 # --- Phase 2: dependencies ---------------------------------------------------

@@ -37,10 +37,8 @@ Serving this on a real hostname means putting TLS in front of it — see
 
 ## Day to day
 
-All of these run from the install directory — `~/.launchpad`, or
-`/opt/launchpad` when the install needed root anyway (Docker was missing, or the
-Docker socket needs `sudo`). The installer prints which one it used, and
-`./uninstall.sh` finds it from either place:
+All of these run from the install directory, which is `~/.launchpad` unless you
+gave `install.sh --dir`:
 
 ```bash
 docker compose logs -f            # what it is doing
@@ -51,16 +49,15 @@ docker compose up -d              # start again
 ```
 
 **`--purge` is the clean uninstall.** It destroys the database and every built
-release, removes the Launchpad image, deletes the files the installer wrote and
-then the install directory itself. It asks you to type `DELETE` first, because
-nothing here is recoverable afterwards — `ENCRYPTION_KEY` goes with `.env`, and
-without it a copy of the database is unreadable anyway.
+release, removes the Launchpad image, and deletes the install directory and
+everything in it — **including any dumps you left there**, so move those out
+first. It asks you to type `DELETE` before any of that, because none of it is
+recoverable: `ENCRYPTION_KEY` goes with `.env`, and a dump of the database is
+unreadable without it anyway.
 
-Three things it deliberately leaves, because they were never this install's:
-`postgres:17-alpine` (a public image your machine may be using elsewhere),
-Docker itself, and a `backups/` directory if you made one — which is also what
-stops the directory from being removed, so an empty `backups/` is the way to
-keep it.
+Two things it leaves, because they were never this install's:
+`postgres:17-alpine` — a public image your machine may be using elsewhere — and
+Docker itself.
 
 **Upgrading is re-running the installer.** It reuses your `.env` untouched,
 pulls the new image and restarts. Migrations run at boot and are one-way, so
