@@ -93,6 +93,14 @@ services:
       # fail silently.
       BASE_URL: ${BASE_URL:-http://localhost:8080}
 
+      # The apps origin, when it cannot be derived. Empty is the normal case:
+      # the platform swaps the apps *container* port into BASE_URL's host, which
+      # is right whenever the browser reaches both through a tunnel. It is wrong
+      # when the browser talks to the published host ports directly and those
+      # ports moved — a laptop install, WSL — because then the apps answer on
+      # HOST_APPS_PORT and nothing derives that. install.sh writes both.
+      APPS_BASE_URL: ${APPS_BASE_URL:-}
+
       # Additional browser origins trusted for writes. Needed only when the SSH
       # tunnel cannot use the same port numbers on both ends — see the README.
       EXTRA_ORIGINS: ${EXTRA_ORIGINS:-}

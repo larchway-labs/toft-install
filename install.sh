@@ -54,7 +54,8 @@ Launchpad installer
 
   --yes                 do not prompt; assume yes (required when there is no terminal)
   --check               run the checks, change nothing, and report
-  --dir PATH            install into PATH (default /opt/launchpad, or ~/.launchpad)
+  --dir PATH            install into PATH (default ~/.launchpad, or /opt/launchpad
+                        when this install needs root anyway)
   --version X.Y.Z       the Launchpad version to install
   --image NAME          the image repository (default gopanair/launchpad)
   --no-docker-install   fail rather than installing Docker
@@ -453,7 +454,13 @@ check_ports() {
     fi
 
     if ! port_in_use 8080 && ! port_in_use 8081; then
-        ok 'ports 8080 and 8081 are free on 127.0.0.1'
+        if [ "$IS_WSL" = 1 ] && ! have netstat.exe; then
+            # Said rather than assumed: this check just passed on evidence that
+            # does not cover the side of the machine the bind happens on.
+            warn 'ports 8080 and 8081 are free in here, but Windows interop is off and that is where Docker Desktop binds them'
+        else
+            ok 'ports 8080 and 8081 are free on 127.0.0.1'
+        fi
         return 0
     fi
 
@@ -467,11 +474,29 @@ check_ports() {
     HOST_PLATFORM_PORT=$_p
     HOST_APPS_PORT=$((_p + 1))
     warn "8080/8081 are in use, so this install publishes on $HOST_PLATFORM_PORT/$HOST_APPS_PORT"
-    if have ss; then ss -ltnp 2>/dev/null | grep -E ':(8080|8081)\b' | sed 's/^/      /' || true; fi
-    note "the tunnel maps them back: ssh -L 8080:localhost:$HOST_PLATFORM_PORT -L 8081:localhost:$HOST_APPS_PORT"
+    if [ "$IS_WSL" = 1 ] && have netstat.exe; then
+        # Name the Windows process, because `ss` in here will show nothing and
+        # the natural conclusion from that is that this script is wrong.
+        netstat.exe -ano -p tcp 2>/dev/null | tr -d '\r' |
+            awk '$4 == "LISTENING" && ($2 ~ /:8080$/ || $2 ~ /:8081$/) { print "      windows pid " $5 " holds " $2 }' || true
+    elif have ss; then
+        ss -ltnp 2>/dev/null | grep -E ':(8080|8081)\b' | sed 's/^/      /' || true
+    fi
+    if [ "$IS_WSL" = 1 ]; then
+        note "open http://localhost:$HOST_PLATFORM_PORT — this is your own machine, so there is no tunnel"
+    else
+        note "the tunnel maps them back: ssh -L 8080:localhost:$HOST_PLATFORM_PORT -L 8081:localhost:$HOST_APPS_PORT"
+    fi
 }
 
 port_in_use() {
+    # Windows first, and on WSL it can be the whole answer: Docker Desktop
+    # publishes ports on the *Windows* host, so a port this distribution sees as
+    # free is bound on the other side of the boundary. Getting this wrong is
+    # expensive — the refusal arrives from the daemon during `compose up`, after
+    # Postgres is running and a volume has been created.
+    if [ "$IS_WSL" = 1 ] && port_in_use_windows "$1"; then return 0; fi
+
     if have ss; then
         ss -ltn 2>/dev/null | grep -qE "127\.0\.0\.1:$1 |\*:$1 |0\.0\.0\.0:$1 "
     elif have netstat; then
@@ -479,6 +504,35 @@ port_in_use() {
     else
         return 1
     fi
+}
+
+# Windows' own view of its ports, read once over WSL interop. Once, because
+# check_ports walks up to sixty pairs and each of these costs a process on the
+# other side of the boundary.
+WIN_PROBED=0 WIN_LISTENING= WIN_EXCLUDED=
+win_probe() {
+    [ "$WIN_PROBED" = 1 ] && return 0
+    WIN_PROBED=1
+    if have netstat.exe; then
+        WIN_LISTENING=$(netstat.exe -ano -p tcp 2>/dev/null | tr -d '\r' |
+            awk '$4 == "LISTENING" { print $2 }')
+    fi
+    # The second way a Windows port is taken, and the one with nothing to find
+    # in netstat: Hyper-V reserves blocks of ports for its own dynamic use, and
+    # a bind inside a reserved block fails with the same message while nothing
+    # is listening anywhere. Docker Desktop's own port ranges come from here.
+    if have netsh.exe; then
+        WIN_EXCLUDED=$(netsh.exe int ipv4 show excludedportrange protocol=tcp 2>/dev/null |
+            tr -d '\r' | awk '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ { print $1, $2 }')
+    fi
+    return 0
+}
+
+port_in_use_windows() {
+    win_probe
+    if printf '%s\n' "$WIN_LISTENING" | grep -q ":$1\$"; then return 0; fi
+    printf '%s\n' "$WIN_EXCLUDED" |
+        awk -v p="$1" 'p + 0 >= $1 + 0 && p + 0 <= $2 + 0 { f = 1 } END { exit !f }'
 }
 
 check_egress() {
@@ -542,9 +596,26 @@ check_existing() {
     fi
 }
 
+# Called after check_docker, which is what makes DOCKER_PRESENT and
+# DOCKER_NEEDS_PRIV answerable here.
 resolve_home() {
     [ -n "$HOME_DIR" ] && return 0
-    if [ "$(id -u)" = 0 ] || [ "$PRIV" = sudo ]; then
+    # An install already on this machine wins over any rule about where a new
+    # one would go: re-running is the upgrade path, and it has to find the .env
+    # it must not rewrite. uninstall.sh looks in the same two places for the
+    # same reason.
+    for _d in /opt/launchpad "${HOME:-.}/.launchpad"; do
+        [ -f "$_d/.env" ] && {
+            HOME_DIR=$_d
+            return 0
+        }
+    done
+    # /opt is the right home for a machine-wide service, but only where this is
+    # already a privileged install. Choosing it because a sudo *binary* exists
+    # asks for a password to run a mkdir and nothing else — on Docker Desktop
+    # under WSL, or against a rootless daemon, every other step of the install
+    # is unprivileged and that prompt is the only one there is.
+    if [ "$(id -u)" = 0 ] || [ "$DOCKER_NEEDS_PRIV" = 1 ] || [ "$DOCKER_PRESENT" = 0 ]; then
         HOME_DIR=/opt/launchpad
     else
         HOME_DIR=${HOME:-.}/.launchpad
@@ -837,14 +908,26 @@ configure() {
         printf '# Read exactly once, at first boot. Removed from this file afterwards.\n'
         printf 'BOOTSTRAP_ADMIN_PASSWORD=%s\n\n' "$NEW_PASSWORD"
         # BASE_URL is the browser's origin at the far end of the tunnel, which
-        # is localhost:8080 no matter which host port this machine had free.
-        printf 'BASE_URL=http://localhost:8080\n'
+        # is localhost:8080 no matter which host port this machine had free —
+        # except where there is no tunnel and cannot be one. On WSL the browser
+        # is on this same machine and talks to the published host ports, so
+        # those ports *are* the origins, and both have to say so: the apps
+        # origin is otherwise derived from the container's 8081 and would point
+        # at a port nothing is listening on.
+        if [ "$IS_WSL" = 1 ] && [ "$HOST_PLATFORM_PORT" != 8080 ]; then
+            printf 'BASE_URL=http://localhost:%s\n' "$HOST_PLATFORM_PORT"
+            printf 'APPS_BASE_URL=http://localhost:%s\n' "$HOST_APPS_PORT"
+        else
+            printf 'BASE_URL=http://localhost:8080\n'
+            printf 'APPS_BASE_URL=\n'
+        fi
         printf 'HOST_PLATFORM_PORT=%s\n' "$HOST_PLATFORM_PORT"
         printf 'HOST_APPS_PORT=%s\n' "$HOST_APPS_PORT"
         # Only when they differ: someone browsing from the box itself, or
         # tunnelling straight through to the host port, arrives on an origin
-        # BASE_URL does not describe, and every write would 403.
-        if [ "$HOST_PLATFORM_PORT" != 8080 ]; then
+        # BASE_URL does not describe, and every write would 403. Not on the WSL
+        # branch above, where BASE_URL already names that origin.
+        if [ "$HOST_PLATFORM_PORT" != 8080 ] && [ "$IS_WSL" != 1 ]; then
             printf 'EXTRA_ORIGINS=http://localhost:%s\n' "$HOST_PLATFORM_PORT"
         else
             printf 'EXTRA_ORIGINS=\n'

@@ -37,8 +37,10 @@ Serving this on a real hostname means putting TLS in front of it — see
 
 ## Day to day
 
-All of these run from the install directory (`/opt/launchpad`, or
-`~/.launchpad`):
+All of these run from the install directory — `~/.launchpad`, or
+`/opt/launchpad` when the install needed root anyway (Docker was missing, or the
+Docker socket needs `sudo`). The installer prints which one it used, and
+`./uninstall.sh` finds it from either place:
 
 ```bash
 docker compose logs -f            # what it is doing
