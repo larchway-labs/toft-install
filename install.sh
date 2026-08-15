@@ -798,6 +798,11 @@ fetch_bundle() {
         [ "$(id -u)" = 0 ] || run_priv chown "$(id -u):$(id -g)" "$HOME_DIR"
     fi
     [ -w "$HOME_DIR" ] || die "$HOME_DIR is not writable by $(id -un)."
+    # Absolute from here on. `--dir .` is a spelling of the directory this
+    # script may already be in, and the comparison below is what decides
+    # whether the bundle gets copied onto itself — which `cp` refuses, with
+    # `set -e` turning the refusal into an install that stops on file one.
+    HOME_DIR=$(cd "$HOME_DIR" && pwd)
     LOGFILE=$HOME_DIR/install.log
     ok "$HOME_DIR"
 

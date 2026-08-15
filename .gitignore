@@ -1,0 +1,12 @@
+# This directory ships as the public launchpad-install repository, and an
+# operator can install straight into a clone of it: `./install.sh --dir .`.
+# What that writes is .env — the only copy of ENCRYPTION_KEY, the JWT secret and
+# the database password — into a git working tree whose remote is public. One
+# `git add -A` later they are on GitHub, and rotating ENCRYPTION_KEY is not a
+# thing that can be done to a database already encrypted with it.
+#
+# So the ignore travels with the bundle rather than living only in the
+# repository this is authored in, where it protects nobody but us.
+.env
+install.log
+backups/
