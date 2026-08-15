@@ -2,11 +2,13 @@
 # Launchpad — remove this install.
 #
 #   ./uninstall.sh            stop everything, keep the database and the releases
-#   ./uninstall.sh --purge    ...and destroy them, and this directory
+#   ./uninstall.sh --purge    ...and destroy them, the image, and this directory
 #
 # The default is reversible: `docker compose up -d` brings the same install back
 # with every app, secret and audit row intact. --purge is not reversible by
-# anything, which is why it asks you to type the word.
+# anything, which is why it asks you to type the word. It leaves behind only
+# what was never this install's: postgres:17-alpine, Docker itself, and any
+# backups/ you took.
 
 set -eu
 
@@ -23,7 +25,7 @@ while [ $# -gt 0 ]; do
         DIR=$1
         ;;
     --help | -h)
-        sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -88,7 +90,8 @@ fi
 printf '\n  This destroys, permanently and with no backup:\n\n'
 printf '    - the database: every app, user, secret, API key and audit row\n'
 printf '    - every built release on the data volume\n'
-printf '    - %s/.env, including the only copy of ENCRYPTION_KEY\n\n' "$DIR"
+printf '    - %s/.env, including the only copy of ENCRYPTION_KEY\n' "$DIR"
+printf '    - the Launchpad image, and this directory\n\n'
 
 if [ "$YES" != 1 ]; then
     # Openable, not merely present: /dev/tty exists in contexts where opening it
@@ -106,6 +109,51 @@ if [ "$YES" != 1 ]; then
 fi
 
 compose down -v
+
+# The image is this product's, and the project name is fixed, so there is no
+# second install on this machine still using it. A purge that leaves most of a
+# gigabyte behind has not done the thing the word means. Read the name out of
+# .env before removing it, and take every tag of that repository: an install
+# that was upgraded has the old ones too. postgres:17-alpine is deliberately not
+# touched — it is a public base image this box may well be using elsewhere, and
+# it is not ours to delete.
+IMAGE=$(sed -n 's/^LAUNCHPAD_IMAGE=//p' "$DIR/.env" 2>/dev/null | tail -1)
 rm -f "$DIR/.env" "$DIR/compose.yml" "$DIR/compose.metadata.yml" \
-    "$DIR/.env.example" "$DIR/SHA256SUMS" "$DIR/install.log"
-printf '\n  Removed. %s may still hold this script and a backups/ directory.\n\n' "$DIR"
+    "$DIR/.env.example" "$DIR/SHA256SUMS" "$DIR/install.log" \
+    "${TMPDIR:-/tmp}/launchpad-install.log"
+
+IMAGE_GONE=0
+if [ -n "$IMAGE" ] && docker images -q "$IMAGE" 2>/dev/null | grep -q .; then
+    # By reference and one at a time, never by image ID: an ID can carry tags
+    # this install did not put there, and removing it would take them with it —
+    # or refuse, which on a list passed in one call takes the rest down with it.
+    # An untagged leftover has no reference to name, so that one goes by ID.
+    docker images --format '{{.Repository}}:{{.Tag}}|{{.ID}}' "$IMAGE" 2>/dev/null |
+        while IFS='|' read -r ref id; do
+            case $ref in *':<none>') ref=$id ;; esac
+            docker image rm "$ref" >/dev/null 2>&1 || true
+        done
+    docker images -q "$IMAGE" 2>/dev/null | grep -q . || IMAGE_GONE=1
+fi
+
+printf '\n  Removed: both containers, both volumes'
+[ "$IMAGE_GONE" = 1 ] && printf ', the %s image' "$IMAGE"
+printf ' and every file this install wrote.\n'
+printf '  Left alone: postgres:17-alpine, a public image this machine may use elsewhere.\n'
+
+# The script and the directory are the last of it. What goes is the copy in the
+# install directory, never `$0`: those are the same file only when this was run
+# from the install, and deleting the bundle or checkout somebody happened to
+# invoke instead would remove the wrong one and leave the right one. Deleting
+# the running script is safe on the path where they are the same file — the
+# shell holds an open descriptor and the inode outlives the name. rmdir then
+# refuses on a directory that still has anything in it, which is exactly the
+# right refusal: a backups/ holds dumps somebody took on purpose, and this is
+# not the moment to be clever about them.
+rm -f "$DIR/uninstall.sh"
+cd /
+if rmdir "$DIR" 2>/dev/null; then
+    printf '  %s is gone.\n\n' "$DIR"
+else
+    printf '  %s still holds files this install did not write, and was kept.\n\n' "$DIR"
+fi
