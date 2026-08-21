@@ -81,6 +81,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is unset — .env is missing or incomplete}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is unset — .env is missing or incomplete}
 
+      # Keys kept only for reading, which is the whole of what makes a rotation
+      # possible on this install: every ciphertext names the key that wrote it,
+      # so the old and the new are live at once and the swap is a restart rather
+      # than a migration. Empty is the normal state — it is set for the length of
+      # a rotation and emptied once `launchpad rotate-key` reports nothing left
+      # under the retired key.
+      #
+      # Passed through even when empty on purpose. Without this line an operator
+      # who puts a new key in .env gets an install that starts, serves, and
+      # cannot read a single secret it stored yesterday.
+      ENCRYPTION_KEY_OLD: ${ENCRYPTION_KEY_OLD:-}
+
       # Read exactly once, when the built-in administrator has no password yet.
       # install.sh removes it from .env after the first successful boot, and an
       # empty value here means the server generates one and prints it once.
@@ -104,6 +116,17 @@ services:
       # Additional browser origins trusted for writes. Needed only when the SSH
       # tunnel cannot use the same port numbers on both ends — see the README.
       EXTRA_ORIGINS: ${EXTRA_ORIGINS:-}
+
+      # One structured stream on stdout, which the json-file driver above keeps
+      # 30 MB of. JSON rather than the binary's `text` default because on this
+      # shape the reader is a log agent or `docker compose logs | jq`, never a
+      # terminal watching a development server — and the access line, which is
+      # the only record of who read what, is unparseable in text.
+      #
+      # Overridable because a support call on a box like this is somebody at an
+      # SSH prompt: LOG_LEVEL=debug for an hour, then back.
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
 
       # The platform's own outbound calls (the gallery catalog, an OIDC issuer,
       # Slack, advisory feeds) honour these. Builds do NOT: git, npm, uv and go

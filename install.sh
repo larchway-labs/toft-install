@@ -57,6 +57,10 @@ Launchpad installer
   --dir PATH            install into PATH (default ~/.launchpad)
   --version X.Y.Z       the Launchpad version to install
   --image NAME          the image repository (default gopanair/launchpad)
+  --raw-base URL        where to download the rest of the bundle from; the
+                        files are read from URL/v<version>/. Only used when
+                        this script was piped in — run it from a directory
+                        that already holds compose.yml and nothing is fetched.
   --no-docker-install   fail rather than installing Docker
   --verbose             show the output of each command instead of a spinner
   --force               proceed past checks that would otherwise stop the install

@@ -67,6 +67,16 @@ take a dump first if the install holds anything you care about:
 docker compose exec postgres pg_dump -U launchpad launchpad > backup.sql
 ```
 
+A release that says which Python it needs is built against the interpreter the
+image carries, so **an upgrade that moves that interpreter rebuilds each Python
+app's dependencies on its next start** — automatically, one log line per app,
+nothing to redeploy and no particular order. What it costs is time: the first
+start of each Python app is as slow as installing its dependencies, and if they
+were running they all pay it at once when the new container comes up. Node is
+not covered and cannot be — a Node major changes the ABI every compiled
+dependency was built against, so a version that moves Node's major is a redeploy
+of every Node app rather than something an upgrade absorbs quietly.
+
 ## The administrator password
 
 It is generated at install and shown once. It cannot be read back — it is stored
@@ -86,8 +96,22 @@ switch it back on, so recovery always requires the machine.
 ## Back up `.env`
 
 `ENCRYPTION_KEY` in that file is the only thing that can decrypt this install's
-app secrets and git tokens. There is no second copy. Losing it does not produce
-an error — the secrets simply stop coming back.
+app secrets and git tokens. There is no second copy, and losing it is not
+recoverable — the platform still starts, and tells you in one line how many
+stored secrets it cannot read.
+
+**Replacing that key is a rotation, not a restart with a new value.** Every
+stored record names the key that wrote it, so both keys can be live at once:
+put the new key in `ENCRYPTION_KEY`, move the old one to `ENCRYPTION_KEY_OLD`,
+`docker compose up -d`, then
+
+```bash
+docker compose exec launchpad launchpad rotate-key
+```
+
+to re-encrypt what is left. Only when that reports nothing under the old key is
+it safe to empty `ENCRYPTION_KEY_OLD` — until then the retired key is still the
+only thing that opens those records. `.env.example` has the long version.
 
 ## What this install does and does not have
 
@@ -120,6 +144,22 @@ in front, change `BASE_URL` and `APPS_BASE_URL` in `.env`, and add the proxy to
 An install behind a mandatory outbound proxy can run, but cannot yet build apps:
 the platform's own calls honour `HTTP_PROXY`, and `git`, `npm` and `uv` are
 deliberately not given it.
+
+An install with **no** outbound HTTPS at all can still scan deployed apps'
+dependencies for known vulnerabilities, which is otherwise the one admin setting
+whose only input is a URL. Bring the corpus in by hand — the same per-ecosystem
+archive the platform would have fetched from OSV — and everything downstream of
+it behaves identically:
+
+```bash
+docker compose cp all.zip launchpad:/tmp/all.zip
+docker compose exec launchpad launchpad advisory-import \
+    --ecosystem pypi --as-of 2026-08-01 /tmp/all.zip
+```
+
+`--as-of` is the snapshot's own date and is required, because every finding
+reports the corpus's age from it — passing today's date would make a stale
+corpus read as fresh, and nothing here is going to refresh it for you.
 
 ## If something goes wrong
 
