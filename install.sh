@@ -22,7 +22,7 @@ set -eu
 
 # --- What this install is ----------------------------------------------------
 
-VERSION_DEFAULT=0.1.0
+VERSION_DEFAULT=0.4.1
 IMAGE_DEFAULT=gopanair/launchpad
 RAW_BASE_DEFAULT=https://raw.githubusercontent.com/gopanair/launchpad-install
 BUNDLE_FILES="compose.yml compose.metadata.yml .env.example uninstall.sh"

@@ -77,6 +77,35 @@ not covered and cannot be — a Node major changes the ABI every compiled
 dependency was built against, so a version that moves Node's major is a redeploy
 of every Node app rather than something an upgrade absorbs quietly.
 
+## Deploying from the machine you write code on
+
+The browser is one door and `lp` is the other. It is a single binary that
+deploys a folder from your own machine, watches the build, and reads the logs
+afterwards:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gopanair/launchpad-cli/main/install.sh | sh
+```
+
+```bash
+lp login http://localhost:8080     # or wherever this install answers
+cd ~/code/my-app
+lp link my-app
+lp deploy
+```
+
+It uploads what is on your disk, respecting every `.gitignore` — no git remote,
+no commit and no repository needed. Linux and Windows; there is no macOS build
+yet and the installer says so rather than failing at a download.
+
+`lp sdk vendor` writes this install's app SDK into your working directory, so
+your editor and your local build can see it before anything is deployed. That
+matters most for Go, where the import does not resolve at all until the platform
+has built the app.
+
+Nothing on this box needs it — the install works entirely through the browser —
+and nothing about it is specific to this shape.
+
 ## The administrator password
 
 It is generated at install and shown once. It cannot be read back — it is stored
@@ -124,6 +153,63 @@ isolated (per-app container) execution, background jobs, durable app storage, an
 telemetry export. Their routes return 404 and nothing about them appears in the
 UI. Each needs infrastructure a single box does not have — those installs use the
 Helm chart instead.
+
+**Durable app storage is the one you can add here**, if you have a filesystem to
+give it. Apps otherwise write into a release directory that the next deploy
+replaces, which is why this install refuses a storage mapping outright rather
+than half-honouring it.
+
+Mount the filesystem on the host yourself — an NFS export, an Amazon S3 Files
+file system, a disk, anything — then give the container a bind mount and a name
+for it in `compose.override.yml`:
+
+```yaml
+services:
+  launchpad:
+    environment:
+      # name=/path inside the container, comma-separated. Add `:ro` where the
+      # host mount is read-only.
+      SHARED_STORAGE_ROOTS: "reports=/mnt/reports"
+    volumes:
+      - /srv/reports:/mnt/reports
+```
+
+Launchpad makes a directory under that path for each storage resource and gates
+it to a group only the apps you map can join. It never makes the mount — that
+would need privileges this container deliberately does not hold — and it never
+deletes what is under one. A read-only level is a second mount you make
+read-only, not a permission Launchpad applies, so a resource under a `:ro` root
+can only be mapped at read.
+
+### Which language versions your apps can ask for
+
+The image carries three of each, and the first is what an app with no pin gets:
+
+| | Versions | An app pins it with |
+|---|---|---|
+| Python | **3.14**, 3.13, 3.12 | `[runtime] python = ">=3.12,<3.13"` in `launchpad.toml` |
+| Node | **24**, 22, 20 | `[runtime] node = ">=20,<21"` |
+| R | **4.5**, 4.4, 4.3 | `[runtime] r = ">=4.4"` |
+| Go | 1.27, 1.26, 1.25 | nothing — see below |
+
+A pin is **refused, never approximated**: a range nothing satisfies fails the
+deploy naming both the range and what this install has, rather than quietly
+building against something else. Comparators only — `>=`, `<`, `==`, comma for
+AND — because `^` infers a range from a semver assumption Python does not share.
+The version a build resolved is in its log, on the app's Runtime section, and in
+the estate census under Admin.
+
+**Node 20 is past its end of life** and is here for apps that ask for it by
+name — a compiled addon is built against one major's ABI, and refusing to run
+such an app is not what moves it off. It is never the default. To stop offering
+it, set `LAUNCHPAD_NODE_PATH` in `compose.override.yml` to just the versions you
+want.
+
+**Go is the exception and takes no pin.** A `go.mod` directive is a *minimum*, so
+the newest toolchain that satisfies it always wins, and Go will not downgrade for
+a module's `toolchain` line either. If you need an older one, name it for the
+whole install with `GOTOOLCHAIN=go1.25.14` in `.env` — it resolves from inside
+the image with no outbound HTTPS, which is the point on a box that has none.
 
 The bundled Postgres is a **fixture**: one container, one volume, no replication,
 no failover, no backups. Point `DATABASE_URL` at a managed database for anything

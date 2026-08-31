@@ -7,8 +7,9 @@
 # given the infrastructure they need.
 #
 # Deployed apps run *inside* the launchpad container as OS processes supervised
-# by PM2, each as its own auto-created account (the image defaults to
-# APP_USER_PER_APP=1 + APP_USER_AUTOCREATE=1). That is shared mode. Apps cannot
+# by PM2, each as its own auto-created account — the platform turns that on by
+# itself when it is root and using PM2, which is what this container is, so
+# nothing here has to say so. That is shared mode. Apps cannot
 # read the platform's files or each other's, and they still share loopback —
 # app-to-app isolation is the accepted risk of this mode, not something this
 # file quietly fixes.
@@ -127,6 +128,35 @@ services:
       # SSH prompt: LOG_LEVEL=debug for an hour, then back.
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Which Go toolchain a build uses, and the one variable on this shape that
+      # an air-gapped install is disproportionately likely to want.
+      #
+      # The image carries three — 1.27, 1.26 and 1.25 — and **nothing an app
+      # writes can select the older two**: a `go.mod` directive is a minimum, so
+      # the newest that satisfies it wins, and Go never downgrades for a
+      # module's own `toolchain` line either. Naming one here is the only lever,
+      # for an estate held on a known toolchain or the dependency that will not
+      # compile on the newest, and Go finds the name on PATH before it considers
+      # the module proxy — so it works with no outbound HTTPS at all.
+      #
+      # Empty is the normal state and is not passed to builds: the toolchain
+      # allow-list skips an empty value, because GOTOOLCHAIN="" and GOTOOLCHAIN
+      # absent are different instructions to the go command.
+      #
+      # `local` is the other value worth knowing: it refuses to fetch a newer
+      # toolchain rather than hanging on a proxy that is not there, and Go's own
+      # refusal names both versions.
+      GOTOOLCHAIN: ${GOTOOLCHAIN:-}
+
+      # The interpreter sets are the *image's* and are deliberately not passed
+      # through here. LAUNCHPAD_PYTHON_PATH, LAUNCHPAD_NODE_PATH and
+      # LAUNCHPAD_GO_PATH are read once at boot rather than through the
+      # allow-list, so an empty-defaulting line would hand the platform an
+      # empty declaration and silently withdraw two of the three versions in
+      # each family. To narrow what this install offers — dropping Node 20, say —
+      # set the variable to the paths you want *here*, explicitly. The README
+      # lists what the image carries.
 
       # The platform's own outbound calls (the gallery catalog, an OIDC issuer,
       # Slack, advisory feeds) honour these. Builds do NOT: git, npm, uv and go
