@@ -22,7 +22,7 @@ set -eu
 
 # --- What this install is ----------------------------------------------------
 
-VERSION_DEFAULT=0.4.1
+VERSION_DEFAULT=0.5.1
 IMAGE_DEFAULT=gopanair/launchpad
 RAW_BASE_DEFAULT=https://raw.githubusercontent.com/gopanair/launchpad-install
 BUNDLE_FILES="compose.yml compose.metadata.yml .env.example uninstall.sh"
@@ -436,7 +436,7 @@ check_resources() {
     if [ "$_gb" -ge "$DISK_SOFT_GB" ]; then
         ok "$_gb GB free on $_check"
     elif [ "$_gb" -ge "$DISK_HARD_GB" ]; then
-        warn "$_gb GB free on $_check — the image alone is about 1 GB, and every app keeps its own node_modules"
+        warn "$_gb GB free on $_check — the image alone unpacks to about 4 GB, and every app keeps its own node_modules"
     else
         [ "$FORCE" = 1 ] || die "$_gb GB free on $_check is not enough to install (need at least $DISK_HARD_GB). --force overrides."
         warn "$_gb GB free on $_check — proceeding because --force was given"

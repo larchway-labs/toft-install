@@ -211,6 +211,28 @@ a module's `toolchain` line either. If you need an older one, name it for the
 whole install with `GOTOOLCHAIN=go1.25.14` in `.env` — it resolves from inside
 the image with no outbound HTTPS, which is the point on a box that has none.
 
+### Notebooks and Quarto documents
+
+A repository whose root is one `.ipynb` or `.qmd` is a notebook app: the cells run
+once, at deploy time, and what they print becomes the page this install serves.
+Nothing is re-rendered by a restart — only a deploy produces a new document, and a
+failing cell fails the deploy while the release already serving stays up. An
+`.Rmd` at the root renders the same way, on the R the image carries.
+
+**Quarto is in this image**, so there is nothing to decide at install time: a
+`.qmd` deploys here, and an `.ipynb` can ask for the Quarto engine instead of the
+default nbconvert.
+
+```toml
+[notebook]
+file   = "reports/weekly.qmd"   # which document, for a repo with several
+engine = "quarto"               # nbconvert (default for .ipynb) or quarto
+```
+
+The cells run with that app's whole environment and nothing is redacted, so a
+notebook that prints a secret has published it — and on an app you have shared,
+"published" means to everyone who can open it.
+
 The bundled Postgres is a **fixture**: one container, one volume, no replication,
 no failover, no backups. Point `DATABASE_URL` at a managed database for anything
 that matters.
