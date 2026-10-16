@@ -118,6 +118,11 @@ services:
       # tunnel cannot use the same port numbers on both ends — see the README.
       EXTRA_ORIGINS: ${EXTRA_ORIGINS:-}
 
+      # Where the Documentation page's links point. Unset is the public site at
+      # this install's version; a mirror's root on a network with no way out;
+      # `off` for no links at all. Configuration, never a setting (ADR §113).
+      DOCS_URL: ${DOCS_URL:-}
+
       # One structured stream on stdout, which the json-file driver above keeps
       # 30 MB of. JSON rather than the binary's `text` default because on this
       # shape the reader is a log agent or `docker compose logs | jq`, never a

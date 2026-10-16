@@ -22,7 +22,7 @@ set -eu
 
 # --- What this install is ----------------------------------------------------
 
-VERSION_DEFAULT=0.5.1
+VERSION_DEFAULT=0.7.0
 IMAGE_DEFAULT=gopanair/toft
 RAW_BASE_DEFAULT=https://raw.githubusercontent.com/larchway-labs/toft-install
 BUNDLE_FILES="compose.yml compose.metadata.yml .env.example uninstall.sh"

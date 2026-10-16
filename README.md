@@ -67,6 +67,11 @@ take a dump first if the install holds anything you care about:
 docker compose exec postgres pg_dump -U toft toft > backup.sql
 ```
 
+**0.7.0 is not an upgrade from 0.5 or earlier.** The product was renamed Toft,
+and its variables, containers, volumes and database were renamed with it, so the
+installer finds nothing to reuse. Install 0.7.0 fresh, beside or in place of
+the old one, and redeploy your apps into it.
+
 A release that says which Python it needs is built against the interpreter the
 image carries, so **an upgrade that moves that interpreter rebuilds each Python
 app's dependencies on its next start** — automatically, one log line per app,
@@ -95,8 +100,8 @@ toft deploy
 ```
 
 It uploads what is on your disk, respecting every `.gitignore` — no git remote,
-no commit and no repository needed. Linux and Windows; there is no macOS build
-yet and the installer says so rather than failing at a download.
+no commit and no repository needed. Linux, macOS and Windows; the install script
+covers the first two and names the download for the third.
 
 `toft sdk vendor` writes this install's app SDK into your working directory, so
 your editor and your local build can see it before anything is deployed. That
@@ -187,9 +192,9 @@ The image carries three of each, and the first is what an app with no pin gets:
 
 | | Versions | An app pins it with |
 |---|---|---|
-| Python | **3.14**, 3.13, 3.12 | `[runtime] python = ">=3.12,<3.13"` in `toft.toml` |
+| Python | **3.15**, 3.14, 3.13 | `[runtime] python = ">=3.13,<3.14"` in `toft.toml` |
 | Node | **24**, 22, 20 | `[runtime] node = ">=20,<21"` |
-| R | **4.5**, 4.4, 4.3 | `[runtime] r = ">=4.4"` |
+| R | **4.6**, 4.5, 4.4 | `[runtime] r = ">=4.5"` |
 | Go | 1.27, 1.26, 1.25 | nothing — see below |
 
 A pin is **refused, never approximated**: a range nothing satisfies fails the
@@ -210,6 +215,11 @@ the newest toolchain that satisfies it always wins, and Go will not downgrade fo
 a module's `toolchain` line either. If you need an older one, name it for the
 whole install with `GOTOOLCHAIN=go1.25.14` in `.env` — it resolves from inside
 the image with no outbound HTTPS, which is the point on a box that has none.
+
+**Documentation links point at the public site.** The Documentation page opens
+Toft's guides for this install's version at `larchway-labs.github.io/toft-docs`;
+the install itself never fetches them. With no internet access, set `DOCS_URL`
+in `.env` to a copy of the site, or to `off`.
 
 ### Notebooks and Quarto documents
 
