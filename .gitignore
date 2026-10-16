@@ -1,4 +1,4 @@
-# This directory ships as the public launchpad-install repository, and an
+# This directory ships as the public toft-install repository, and an
 # operator can install straight into a clone of it: `./install.sh --dir .`.
 # What that writes is .env — the only copy of ENCRYPTION_KEY, the JWT secret and
 # the database password — into a git working tree whose remote is public. One

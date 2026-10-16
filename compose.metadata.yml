@@ -17,7 +17,7 @@
 # absent, rather than configured-and-off.
 
 services:
-  launchpad:
+  toft:
     cap_add:
       - NET_ADMIN
     environment:

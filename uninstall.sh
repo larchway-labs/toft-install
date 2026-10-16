@@ -1,5 +1,5 @@
 #!/bin/sh
-# Launchpad — remove this install.
+# Toft — remove this install.
 #
 #   ./uninstall.sh            stop everything, keep the database and the releases
 #   ./uninstall.sh --purge    ...and destroy them, the image, and this directory
@@ -44,10 +44,10 @@ done
 # compose.yml is identical and whose .env is somewhere else entirely. Anchoring
 # on compose.yml alone finds that one and then removes nothing, so .env is what
 # marks an install, and there is exactly one other place it can be: install.sh
-# writes to ~/.launchpad and nowhere else unless it was told to.
+# writes to ~/.toft and nowhere else unless it was told to.
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ -z "$DIR" ]; then
-    for d in "$HERE" "${HOME:-.}/.launchpad"; do
+    for d in "$HERE" "${HOME:-.}/.toft"; do
         if [ -f "$d/.env" ] && [ -f "$d/compose.yml" ]; then
             DIR=$d
             break
@@ -61,7 +61,7 @@ if [ -z "$DIR" ]; then
 fi
 
 [ -f "$DIR/compose.yml" ] || {
-    echo "no compose.yml in $DIR — pass --dir (an install lives in ~/.launchpad unless install.sh was given one)" >&2
+    echo "no compose.yml in $DIR — pass --dir (an install lives in ~/.toft unless install.sh was given one)" >&2
     exit 1
 }
 cd "$DIR"
@@ -76,7 +76,7 @@ cd "$DIR"
 # container, so no service ever sees them.
 compose() {
     POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-unused} \
-        LAUNCHPAD_VERSION=${LAUNCHPAD_VERSION:-unused} \
+        TOFT_VERSION=${TOFT_VERSION:-unused} \
         JWT_SECRET=${JWT_SECRET:-unused} \
         ENCRYPTION_KEY=${ENCRYPTION_KEY:-unused} \
         docker compose "$@"
@@ -92,7 +92,7 @@ fi
 printf '\n  This destroys, permanently and with no backup:\n\n'
 printf '    - the database: every app, user, secret, API key and audit row\n'
 printf '    - every built release on the data volume\n'
-printf '    - the Launchpad image\n'
+printf '    - the Toft image\n'
 printf '    - %s and everything in it: .env and the only copy of\n' "$DIR"
 printf '      ENCRYPTION_KEY, and any dumps or backups you put there\n\n'
 
@@ -120,7 +120,7 @@ compose down -v
 # that was upgraded has the old ones too. postgres:17-alpine is deliberately not
 # touched — it is a public base image this box may well be using elsewhere, and
 # it is not ours to delete.
-IMAGE=$(sed -n 's/^LAUNCHPAD_IMAGE=//p' "$DIR/.env" 2>/dev/null | tail -1)
+IMAGE=$(sed -n 's/^TOFT_IMAGE=//p' "$DIR/.env" 2>/dev/null | tail -1)
 
 IMAGE_GONE=0
 if [ -n "$IMAGE" ] && docker images -q "$IMAGE" 2>/dev/null | grep -q .; then
@@ -154,7 +154,7 @@ case $DIR in
     ;;
 esac
 cd /
-rm -rf "$DIR" "${TMPDIR:-/tmp}/launchpad-install.log"
+rm -rf "$DIR" "${TMPDIR:-/tmp}/toft-install.log"
 
 printf '\n  Removed: both containers, both volumes'
 [ "$IMAGE_GONE" = 1 ] && printf ', the %s image' "$IMAGE"

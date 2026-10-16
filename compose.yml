@@ -1,4 +1,4 @@
-# Launchpad — the one-box install.
+# Toft — the one-box install.
 #
 # Two services. Everything optional stays absent, which is the product's rule
 # rather than this file's economy: no artifact store, no isolated backend, no
@@ -6,7 +6,7 @@
 # appears in the UI, which is the honest state for an install that has not been
 # given the infrastructure they need.
 #
-# Deployed apps run *inside* the launchpad container as OS processes supervised
+# Deployed apps run *inside* the toft container as OS processes supervised
 # by PM2, each as its own auto-created account — the platform turns that on by
 # itself when it is root and using PM2, which is what this container is, so
 # nothing here has to say so. That is shared mode. Apps cannot
@@ -26,20 +26,20 @@
 # copy of the key that decrypts this install's app secrets, so back it up.
 
 # The project name namespaces containers, networks and volumes. Set here rather
-# than inherited from the directory name, so an install in ~/launchpad and one
-# in /opt/launchpad cannot silently share volumes — and so a developer running
+# than inherited from the directory name, so an install in ~/toft and one
+# in /opt/toft cannot silently share volumes — and so a developer running
 # this bundle never collides with the repo's own docker-compose.yml, which
-# claims the bare names `launchpad` and `launchpad-postgres`.
-name: launchpad
+# claims the bare names `toft` and `toft-postgres`.
+name: toft
 
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: launchpad
+      POSTGRES_USER: toft
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is unset — .env is missing or incomplete}
-      POSTGRES_DB: launchpad
+      POSTGRES_DB: toft
       # Deterministic collation, so ORDER BY means the same thing on every
       # install. Matches the development compose file.
       POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
@@ -48,11 +48,11 @@ services:
     # Deliberately no `ports:`. The database holding every app's encrypted
     # secrets and the audit log is reachable on the compose network and nowhere
     # else — which also means 5432 cannot collide with a Postgres this machine
-    # already runs. `docker compose exec postgres psql -U launchpad` is the way in.
+    # already runs. `docker compose exec postgres psql -U toft` is the way in.
     healthcheck:
-      # Launchpad's own startup blocks on migrations, so this only has to say
+      # Toft's own startup blocks on migrations, so this only has to say
       # when connections are being accepted.
-      test: ["CMD-SHELL", "pg_isready -U launchpad -d launchpad"]
+      test: ["CMD-SHELL", "pg_isready -U toft -d toft"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -66,8 +66,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  launchpad:
-    image: ${LAUNCHPAD_IMAGE:-launchpad}:${LAUNCHPAD_VERSION:?LAUNCHPAD_VERSION is unset — .env is missing or incomplete}
+  toft:
+    image: ${TOFT_IMAGE:-toft}:${TOFT_VERSION:?TOFT_VERSION is unset — .env is missing or incomplete}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -75,7 +75,7 @@ services:
     environment:
       # postgres:5432 is the in-network address. There is no host port mapping
       # to fall back on, by design.
-      DATABASE_URL: postgres://launchpad:${POSTGRES_PASSWORD:?}@postgres:5432/launchpad?sslmode=disable
+      DATABASE_URL: postgres://toft:${POSTGRES_PASSWORD:?}@postgres:5432/toft?sslmode=disable
 
       # config.Load refuses to start without these two. JWT_SECRET must be at
       # least 32 bytes; ENCRYPTION_KEY must be exactly 64 hex characters.
@@ -86,7 +86,7 @@ services:
       # possible on this install: every ciphertext names the key that wrote it,
       # so the old and the new are live at once and the swap is a restart rather
       # than a migration. Empty is the normal state — it is set for the length of
-      # a rotation and emptied once `launchpad rotate-key` reports nothing left
+      # a rotation and emptied once `toft rotate-key` reports nothing left
       # under the retired key.
       #
       # Passed through even when empty on purpose. Without this line an operator
@@ -150,8 +150,8 @@ services:
       GOTOOLCHAIN: ${GOTOOLCHAIN:-}
 
       # The interpreter sets are the *image's* and are deliberately not passed
-      # through here. LAUNCHPAD_PYTHON_PATH, LAUNCHPAD_NODE_PATH and
-      # LAUNCHPAD_GO_PATH are read once at boot rather than through the
+      # through here. TOFT_PYTHON_PATH, TOFT_NODE_PATH and
+      # TOFT_GO_PATH are read once at boot rather than through the
       # allow-list, so an empty-defaulting line would hand the platform an
       # empty declaration and silently withdraw two of the three versions in
       # each family. To narrow what this install offers — dropping Node 20, say —
@@ -187,7 +187,7 @@ services:
       # volume rather than a bind mount: these are container-owned artifacts,
       # and on a SELinux-enforcing host a bind mount needs :z relabelling that
       # nothing here would remember to ask for.
-      - launchpad-data:/data
+      - toft-data:/data
     # The platform drains rather than closing. The 10-second default would kill
     # a deploy mid-build and leave a half-written release behind.
     stop_grace_period: 60s
@@ -195,4 +195,4 @@ services:
 
 volumes:
   postgres-data:
-  launchpad-data:
+  toft-data:

@@ -1,9 +1,9 @@
 #!/bin/sh
-# Launchpad — the one-box install.
+# Toft — the one-box install.
 #
-#   curl -fsSL https://raw.githubusercontent.com/gopanair/launchpad-install/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/larchway-labs/toft-install/main/install.sh | sh
 #
-# Takes a Linux machine from nothing to a running Launchpad in shared mode:
+# Takes a Linux machine from nothing to a running Toft in shared mode:
 # Docker if it is missing, Postgres alongside, secrets generated, and the
 # built-in administrator's first password printed once at the end.
 #
@@ -23,8 +23,8 @@ set -eu
 # --- What this install is ----------------------------------------------------
 
 VERSION_DEFAULT=0.5.1
-IMAGE_DEFAULT=gopanair/launchpad
-RAW_BASE_DEFAULT=https://raw.githubusercontent.com/gopanair/launchpad-install
+IMAGE_DEFAULT=gopanair/toft
+RAW_BASE_DEFAULT=https://raw.githubusercontent.com/larchway-labs/toft-install
 BUNDLE_FILES="compose.yml compose.metadata.yml .env.example uninstall.sh"
 
 # Minimums. Below the hard floors the install cannot work; below the soft ones
@@ -48,15 +48,15 @@ HOME_DIR=
 
 usage() {
     cat <<'EOF'
-Launchpad installer
+Toft installer
 
   install.sh [options]
 
   --yes                 do not prompt; assume yes (required when there is no terminal)
   --check               run the checks, change nothing, and report
-  --dir PATH            install into PATH (default ~/.launchpad)
-  --version X.Y.Z       the Launchpad version to install
-  --image NAME          the image repository (default gopanair/launchpad)
+  --dir PATH            install into PATH (default ~/.toft)
+  --version X.Y.Z       the Toft version to install
+  --image NAME          the image repository (default gopanair/toft)
   --raw-base URL        where to download the rest of the bundle from; the
                         files are read from URL/v<version>/. Only used when
                         this script was piped in — run it from a directory
@@ -333,7 +333,7 @@ preflight() {
     case $ARCH in
     x86_64 | amd64) ARCH=amd64 ;;
     aarch64 | arm64) ARCH=arm64 ;;
-    *) die "no Launchpad image is published for $ARCH. The image is built for x86_64 and arm64." ;;
+    *) die "no Toft image is published for $ARCH. The image is built for x86_64 and arm64." ;;
     esac
 
     if [ -d /run/systemd/system ]; then INIT=systemd; elif have rc-update; then INIT=openrc; fi
@@ -451,7 +451,7 @@ check_ports() {
     HOST_APPS_PORT=8081
 
     # Already ours? Re-running the installer must not trip over itself.
-    if [ "$DOCKER_PRESENT" = 1 ] && dkr ps --filter 'name=^launchpad-launchpad' --format '{{.Names}}' 2>/dev/null | grep -q .; then
+    if [ "$DOCKER_PRESENT" = 1 ] && dkr ps --filter 'name=^toft-toft' --format '{{.Names}}' 2>/dev/null | grep -q .; then
         ok "ports are held by this install's own containers"
         return 0
     fi
@@ -589,10 +589,10 @@ check_existing() {
         return 0
     fi
     EXISTING=0
-    if [ "$DOCKER_PRESENT" = 1 ] && dkr volume ls -q 2>/dev/null | grep -qx 'launchpad_postgres-data'; then
-        bad 'a Launchpad database volume exists, but there is no .env beside this install'
+    if [ "$DOCKER_PRESENT" = 1 ] && dkr volume ls -q 2>/dev/null | grep -qx 'toft_postgres-data'; then
+        bad 'a Toft database volume exists, but there is no .env beside this install'
         note 'that database was encrypted with a key that is not on this machine any more'
-        [ "$FORCE" = 1 ] || die "restore the old .env into $HOME_DIR, or pass --force to start over on a fresh volume (the old one is left untouched, and you can remove it with: docker volume rm launchpad_postgres-data)."
+        [ "$FORCE" = 1 ] || die "restore the old .env into $HOME_DIR, or pass --force to start over on a fresh volume (the old one is left untouched, and you can remove it with: docker volume rm toft_postgres-data)."
         warn 'proceeding with --force: the existing volume will be reused and its secrets will not decrypt'
     else
         ok "nothing installed yet $M_ARROW $HOME_DIR"
@@ -600,7 +600,7 @@ check_existing() {
 }
 
 # One place, always, unless --dir said otherwise. A rule that picked between
-# /opt/launchpad and here — on privilege, or on which of them already had an
+# /opt/toft and here — on privilege, or on which of them already had an
 # .env — meant the answer depended on how the operator happened to be logged in
 # when they ran it, and the same person running `sudo ./install.sh` on Tuesday
 # and `./install.sh` on Wednesday would be looking at two installs. Nothing this
@@ -608,7 +608,7 @@ check_existing() {
 # uninstaller has one place to look.
 resolve_home() {
     [ -n "$HOME_DIR" ] && return 0
-    HOME_DIR=${HOME:-.}/.launchpad
+    HOME_DIR=${HOME:-.}/.toft
 }
 
 # --- Phase 2: dependencies ---------------------------------------------------
@@ -708,7 +708,7 @@ install_docker_convenience() {
     # Failure writing output to destination` — a message that names neither the
     # directory nor the reason. Nothing keeps this file anyway; it is removed
     # three lines down.
-    _s=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/launchpad-get-docker.$$.sh")
+    _s=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/toft-get-docker.$$.sh")
     spin 'downloading get.docker.com' fetch https://get.docker.com "$_s" ||
         die "could not download Docker's install script"
     spin 'installing Docker Engine' run_priv sh "$_s" ||
@@ -758,7 +758,7 @@ enable_daemon() {
     case $INIT in
     systemd)
         # `enable` as much as `start`: a box that reboots with the daemon
-        # disabled comes back with no Launchpad and no error anywhere.
+        # disabled comes back with no Toft and no error anywhere.
         spin 'enabling and starting the Docker daemon' run_priv systemctl enable --now docker ||
             warn 'could not enable the Docker daemon — start it yourself before the next reboot'
         ;;
@@ -874,8 +874,8 @@ configure() {
         # silent, unrecoverable data loss, so this path never writes secrets.
         ok 'reusing the existing .env'
         NEW_PASSWORD=
-        sed -i "s|^LAUNCHPAD_VERSION=.*|LAUNCHPAD_VERSION=$VERSION|" "$ENVF"
-        sed -i "s|^LAUNCHPAD_IMAGE=.*|LAUNCHPAD_IMAGE=$IMAGE|" "$ENVF"
+        sed -i "s|^TOFT_VERSION=.*|TOFT_VERSION=$VERSION|" "$ENVF"
+        sed -i "s|^TOFT_IMAGE=.*|TOFT_IMAGE=$IMAGE|" "$ENVF"
         # The ports this install already publishes on win over anything the
         # port scan just guessed — they are in use precisely because they are ours.
         HOST_PLATFORM_PORT=$(env_value HOST_PLATFORM_PORT "$HOST_PLATFORM_PORT")
@@ -894,8 +894,8 @@ configure() {
     {
         printf '# Written by install.sh. BACK THIS FILE UP — ENCRYPTION_KEY is the only\n'
         printf '# thing that can decrypt this install'"'"'s app secrets and git tokens.\n\n'
-        printf 'LAUNCHPAD_IMAGE=%s\n' "$IMAGE"
-        printf 'LAUNCHPAD_VERSION=%s\n\n' "$VERSION"
+        printf 'TOFT_IMAGE=%s\n' "$IMAGE"
+        printf 'TOFT_VERSION=%s\n\n' "$VERSION"
         printf 'JWT_SECRET=%s\n' "$_jwt"
         printf 'ENCRYPTION_KEY=%s\n' "$_key"
         printf 'POSTGRES_PASSWORD=%s\n\n' "$_pg"
@@ -950,7 +950,7 @@ start() {
             die "could not pull $IMAGE:$VERSION, and it is not on this machine. Check the tag exists and the registry is reachable — the log is $LOGFILE"
         fi
     fi
-    spin 'starting postgres and launchpad' compose up -d ||
+    spin 'starting postgres and toft' compose up -d ||
         die "docker compose up failed. The log is $LOGFILE"
     wait_healthy
 }
@@ -961,33 +961,33 @@ wait_healthy() {
     _i=0
     while :; do
         _state=$(compose ps --format '{{.Name}} {{.State}} {{.Health}}' 2>/dev/null || echo)
-        if printf '%s' "$_state" | grep -q 'launchpad-launchpad.*running.*healthy'; then
+        if printf '%s' "$_state" | grep -q 'toft-toft.*running.*healthy'; then
             [ "$UI_TTY" = 1 ] && printf '\r\033[K'
-            ok "launchpad is healthy $C_DIM$(elapsed "$_start")$C_RESET"
+            ok "toft is healthy $C_DIM$(elapsed "$_start")$C_RESET"
             break
         fi
         # Nothing to wait for. Spinning out the full timeout against a container
         # that was never created tells the operator nothing they can act on.
-        if ! printf '%s' "$_state" | grep -q 'launchpad-launchpad'; then
+        if ! printf '%s' "$_state" | grep -q 'toft-toft'; then
             [ "$UI_TTY" = 1 ] && printf '\r\033[K'
-            bad 'the launchpad container was not created'
+            bad 'the toft container was not created'
             compose ps -a 2>&1 | sed 's/^/      /' || true
             die "docker compose did not start it. The log is $LOGFILE"
         fi
-        if printf '%s' "$_state" | grep -qE 'launchpad-launchpad.*(exited|restarting)'; then
+        if printf '%s' "$_state" | grep -qE 'toft-toft.*(exited|restarting)'; then
             [ "$UI_TTY" = 1 ] && printf '\r\033[K'
-            bad 'the launchpad container is not staying up'
-            compose logs --tail 50 launchpad 2>&1 | sed 's/^/      /' || true
-            die "see above, and 'docker compose -f $HOME_DIR/compose.yml logs -f launchpad' for the rest."
+            bad 'the toft container is not staying up'
+            compose logs --tail 50 toft 2>&1 | sed 's/^/      /' || true
+            die "see above, and 'docker compose -f $HOME_DIR/compose.yml logs -f toft' for the rest."
         fi
         if [ $(($(now) - _start)) -gt "$_limit" ]; then
             [ "$UI_TTY" = 1 ] && printf '\r\033[K'
-            bad "launchpad did not become healthy within ${_limit}s"
-            compose logs --tail 50 launchpad 2>&1 | sed 's/^/      /' || true
+            bad "toft did not become healthy within ${_limit}s"
+            compose logs --tail 50 toft 2>&1 | sed 's/^/      /' || true
             die "see above. The container is still running; nothing has been rolled back."
         fi
         if [ "$UI_TTY" = 1 ]; then
-            printf '\r    %s%s%s waiting for launchpad to become healthy %s%s%s ' \
+            printf '\r    %s%s%s waiting for toft to become healthy %s%s%s ' \
                 "$C_BLUE" "$(spin_frame "$_i")" "$C_RESET" "$C_DIM" "$(elapsed "$_start")" "$C_RESET"
         fi
         _i=$((_i + 1))
@@ -1009,7 +1009,7 @@ wait_healthy() {
 strip_bootstrap_password() {
     [ -n "$NEW_PASSWORD" ] || return 0
     sed -i \
-        -e 's|^BOOTSTRAP_ADMIN_PASSWORD=.*|# BOOTSTRAP_ADMIN_PASSWORD was read at first boot and removed.\n# A new one: docker compose exec launchpad launchpad local-admin enable|' \
+        -e 's|^BOOTSTRAP_ADMIN_PASSWORD=.*|# BOOTSTRAP_ADMIN_PASSWORD was read at first boot and removed.\n# A new one: docker compose exec toft toft local-admin enable|' \
         "$ENVF"
 }
 
@@ -1059,7 +1059,7 @@ summary() {
     _user=$(id -un)
     _host=$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo this-machine)
 
-    box_add "Launchpad $VERSION is running"
+    box_add "Toft $VERSION is running"
     box_add ''
     box_add "On this machine    http://localhost:$HOST_PLATFORM_PORT"
     box_add "From your laptop   ssh -L 8080:localhost:$HOST_PLATFORM_PORT \\"
@@ -1077,7 +1077,7 @@ summary() {
         box_add 'was set. If nobody knows it:'
         box_add ''
         box_add "  cd $HOME_DIR && docker compose exec \\"
-        box_add '      launchpad launchpad local-admin enable'
+        box_add '      toft toft local-admin enable'
     fi
     box_print
 
@@ -1100,10 +1100,10 @@ summary() {
 main() {
     parse_args "$@"
     ui_init
-    LOGFILE=${TMPDIR:-/tmp}/launchpad-install.log
+    LOGFILE=${TMPDIR:-/tmp}/toft-install.log
     : >"$LOGFILE" 2>/dev/null || LOGFILE=
 
-    printf '\n  %sLaunchpad%s %s\n' "$C_BOLD" "$C_RESET" "$VERSION"
+    printf '\n  %sToft%s %s\n' "$C_BOLD" "$C_RESET" "$VERSION"
 
     preflight
 

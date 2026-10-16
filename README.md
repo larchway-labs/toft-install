@@ -1,10 +1,10 @@
-# Launchpad
+# Toft
 
 Internal app hosting — paste a GitHub repo URL, and it clones, builds, deploys
 and serves it. One command, one Linux box.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gopanair/launchpad-install/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/larchway-labs/toft-install/main/install.sh | sh
 ```
 
 It checks the machine first and changes nothing until it has told you what it is
@@ -16,7 +16,7 @@ Nothing else; Docker is the only dependency and the script can install it.
 
 ## Getting to it
 
-Launchpad listens on loopback only, so reach it over an SSH tunnel:
+Toft listens on loopback only, so reach it over an SSH tunnel:
 
 ```bash
 ssh -L 8080:localhost:8080 -L 8081:localhost:8081 you@your-box
@@ -37,7 +37,7 @@ Serving this on a real hostname means putting TLS in front of it — see
 
 ## Day to day
 
-All of these run from the install directory, which is `~/.launchpad` unless you
+All of these run from the install directory, which is `~/.toft` unless you
 gave `install.sh --dir`:
 
 ```bash
@@ -49,7 +49,7 @@ docker compose up -d              # start again
 ```
 
 **`--purge` is the clean uninstall.** It destroys the database and every built
-release, removes the Launchpad image, and deletes the install directory and
+release, removes the Toft image, and deletes the install directory and
 everything in it — **including any dumps you left there**, so move those out
 first. It asks you to type `DELETE` before any of that, because none of it is
 recoverable: `ENCRYPTION_KEY` goes with `.env`, and a dump of the database is
@@ -64,7 +64,7 @@ pulls the new image and restarts. Migrations run at boot and are one-way, so
 take a dump first if the install holds anything you care about:
 
 ```bash
-docker compose exec postgres pg_dump -U launchpad launchpad > backup.sql
+docker compose exec postgres pg_dump -U toft toft > backup.sql
 ```
 
 A release that says which Python it needs is built against the interpreter the
@@ -79,26 +79,26 @@ of every Node app rather than something an upgrade absorbs quietly.
 
 ## Deploying from the machine you write code on
 
-The browser is one door and `lp` is the other. It is a single binary that
+The browser is one door and `toft` is the other. It is a single binary that
 deploys a folder from your own machine, watches the build, and reads the logs
 afterwards:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gopanair/launchpad-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/larchway-labs/toft-cli/main/install.sh | sh
 ```
 
 ```bash
-lp login http://localhost:8080     # or wherever this install answers
+toft login http://localhost:8080     # or wherever this install answers
 cd ~/code/my-app
-lp link my-app
-lp deploy
+toft link my-app
+toft deploy
 ```
 
 It uploads what is on your disk, respecting every `.gitignore` — no git remote,
 no commit and no repository needed. Linux and Windows; there is no macOS build
 yet and the installer says so rather than failing at a download.
 
-`lp sdk vendor` writes this install's app SDK into your working directory, so
+`toft sdk vendor` writes this install's app SDK into your working directory, so
 your editor and your local build can see it before anything is deployed. That
 matters most for Go, where the import does not resolve at all until the platform
 has built the app.
@@ -114,7 +114,7 @@ only as a hash, and the first sign-in has to replace it anyway.
 If nobody knows it, this needs no old password, only a shell on the box:
 
 ```bash
-docker compose exec launchpad launchpad local-admin enable
+docker compose exec toft toft local-admin enable
 ```
 
 That prints a new one, unlocks the account, and switches local sign-in back on.
@@ -135,7 +135,7 @@ put the new key in `ENCRYPTION_KEY`, move the old one to `ENCRYPTION_KEY_OLD`,
 `docker compose up -d`, then
 
 ```bash
-docker compose exec launchpad launchpad rotate-key
+docker compose exec toft toft rotate-key
 ```
 
 to re-encrypt what is left. Only when that reports nothing under the old key is
@@ -144,7 +144,7 @@ only thing that opens those records. `.env.example` has the long version.
 
 ## What this install does and does not have
 
-Apps run as OS processes inside the Launchpad container, each as its own account,
+Apps run as OS processes inside the Toft container, each as its own account,
 supervised by PM2. That is *shared mode*, and it is the whole of what this bundle
 sets up.
 
@@ -165,7 +165,7 @@ for it in `compose.override.yml`:
 
 ```yaml
 services:
-  launchpad:
+  toft:
     environment:
       # name=/path inside the container, comma-separated. Add `:ro` where the
       # host mount is read-only.
@@ -174,11 +174,11 @@ services:
       - /srv/reports:/mnt/reports
 ```
 
-Launchpad makes a directory under that path for each storage resource and gates
+Toft makes a directory under that path for each storage resource and gates
 it to a group only the apps you map can join. It never makes the mount — that
 would need privileges this container deliberately does not hold — and it never
 deletes what is under one. A read-only level is a second mount you make
-read-only, not a permission Launchpad applies, so a resource under a `:ro` root
+read-only, not a permission Toft applies, so a resource under a `:ro` root
 can only be mapped at read.
 
 ### Which language versions your apps can ask for
@@ -187,7 +187,7 @@ The image carries three of each, and the first is what an app with no pin gets:
 
 | | Versions | An app pins it with |
 |---|---|---|
-| Python | **3.14**, 3.13, 3.12 | `[runtime] python = ">=3.12,<3.13"` in `launchpad.toml` |
+| Python | **3.14**, 3.13, 3.12 | `[runtime] python = ">=3.12,<3.13"` in `toft.toml` |
 | Node | **24**, 22, 20 | `[runtime] node = ">=20,<21"` |
 | R | **4.5**, 4.4, 4.3 | `[runtime] r = ">=4.4"` |
 | Go | 1.27, 1.26, 1.25 | nothing — see below |
@@ -202,7 +202,7 @@ the estate census under Admin.
 **Node 20 is past its end of life** and is here for apps that ask for it by
 name — a compiled addon is built against one major's ABI, and refusing to run
 such an app is not what moves it off. It is never the default. To stop offering
-it, set `LAUNCHPAD_NODE_PATH` in `compose.override.yml` to just the versions you
+it, set `TOFT_NODE_PATH` in `compose.override.yml` to just the versions you
 want.
 
 **Go is the exception and takes no pin.** A `go.mod` directive is a *minimum*, so
@@ -260,8 +260,8 @@ archive the platform would have fetched from OSV — and everything downstream o
 it behaves identically:
 
 ```bash
-docker compose cp all.zip launchpad:/tmp/all.zip
-docker compose exec launchpad launchpad advisory-import \
+docker compose cp all.zip toft:/tmp/all.zip
+docker compose exec toft toft advisory-import \
     --ecosystem pypi --as-of 2026-08-01 /tmp/all.zip
 ```
 
@@ -272,7 +272,7 @@ corpus read as fresh, and nothing here is going to refresh it for you.
 ## If something goes wrong
 
 ```bash
-docker compose logs launchpad     # the platform
+docker compose logs toft     # the platform
 docker compose ps                 # what is running, and its health
 cat install.log                   # what the installer did
 ```
