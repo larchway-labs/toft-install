@@ -158,8 +158,8 @@ services:
       # through here. TOFT_PYTHON_PATH, TOFT_NODE_PATH and
       # TOFT_GO_PATH are read once at boot rather than through the
       # allow-list, so an empty-defaulting line would hand the platform an
-      # empty declaration and silently withdraw two of the three versions in
-      # each family. To narrow what this install offers — dropping Node 20, say —
+      # empty declaration and silently withdraw the older versions in each
+      # family. To narrow what this install offers — dropping Node 20, say —
       # set the variable to the paths you want *here*, explicitly. The README
       # lists what the image carries.
 

@@ -213,7 +213,7 @@ want.
 **Go is the exception and takes no pin.** A `go.mod` directive is a *minimum*, so
 the newest toolchain that satisfies it always wins, and Go will not downgrade for
 a module's `toolchain` line either. If you need an older one, name it for the
-whole install with `GOTOOLCHAIN=go1.25.14` in `.env` — it resolves from inside
+whole install with `GOTOOLCHAIN=go1.26.9` in `.env` — it resolves from inside
 the image with no outbound HTTPS, which is the point on a box that has none.
 
 **Documentation links point at the public site.** The Documentation page opens
